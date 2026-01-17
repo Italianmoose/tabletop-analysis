@@ -5,6 +5,9 @@ Created on Thu Sep 26 19:35:43 2024
 @author: itali
 """
 
+from pathlib import Path
+import sys
+sys.path.append(str(Path.cwd().parent / "dice"))
 from dice import Dice
 import random
 
