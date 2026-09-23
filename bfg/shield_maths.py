@@ -62,18 +62,15 @@ class Weapon:
             return output
     
     def roll_with_reroll(self, tgt=4, case=0, frac=1):
-        if self.wb:
-            num = int(np.ceil(gtable.loc[self.strength, case] * frac))
-            rolls = sum([next(self.dice) >= tgt for x in range(num)])
-            num_failed = num - rolls
-            rerolls = sum([next(self.dice) >= tgt for x in range(num_failed)])
-            return rolls + rerolls
+        if not self.wb:
+            tgt = 4
+            num = self.strength
         else:
-            num = int(np.ceil(self.strength * frac))
-            rolls = sum([next(self.dice) >= 4 for x in range(num)])
-            num_failed = num - rolls
-            rerolls = sum([next(self.dice) >= 4 for x in range(num_failed)])
-            return rolls + rerolls
+            num = int(np.ceil(gtable.loc[self.strength, case] * frac))
+        rolls = sum([next(self.dice) >= tgt for x in range(num)])
+        num_failed = num - rolls
+        rerolls = sum([next(self.dice) >= tgt for x in range(num_failed)])
+        return rolls + rerolls
 
 
 profile_default = {
@@ -105,7 +102,8 @@ class Ship:
         self.wep_frac = 1
         self.remaining_hits = self.profile['hits']
     
-    def shoot(self, tgt, distance=30, firing_side='prow', tgt_facing='prow'):
+    def shoot(self, tgt, distance=30, firing_side='prow', tgt_facing='prow',
+              blast=False):
         tgt_num = tgt.profile['armour'][tgt_facing]
         match tgt_facing.lower():
             case 'prow':
@@ -124,6 +122,8 @@ class Ship:
             col += 1
         elif distance <= 15:
             col -= 1
+        if blast:
+            col += 1
         if col > 5:
             col = 5
         elif col < 1:
@@ -135,7 +135,7 @@ class Ship:
         if self.order == 'lock on':
             return sum(
                 [x.roll_with_reroll(tgt_num, col, frac=frac) for
-                 x in self.profile.weapons[firing_side] if x.range >= distance]
+                 x in self.profile["weapons"][firing_side] if x.range >= distance]
             )
         elif self.order and self.order != "reload ordnance":
             frac /= 2
@@ -152,6 +152,8 @@ tgt_facings = ["prow", "side", "rear"]
 
 
 if __name__ == "__main__":
+    locked_on = False
+    blast = True
     # ---- Gothic
     profile_gothic = copy(profile_default)
     profile_gothic['weapons']['port'].append(Weapon(4, 30, wb=False))
@@ -242,8 +244,13 @@ if __name__ == "__main__":
         carnage,
         slaughter,
     ]
+    # tgt_facings = ['rear']
+    if locked_on:
+        for sheep in firing_ships:
+            sheep.order = 'lock on'
     results = []
     for sheep in firing_ships:
+        # sheep.order = 'lock on'
         for targeet in tgts:
             for rangee in ranges:
                 for face in tgt_facings:
@@ -251,9 +258,12 @@ if __name__ == "__main__":
                         targeet,
                         distance=rangee,
                         firing_side='port',
-                        tgt_facing=face
+                        tgt_facing=face,
+                        blast=blast,
                     ) for x in range(num_tests)]
-                    bins = list(set(interim_result))
+                    min_hits = min(interim_result)
+                    min_hits_range = list(range(min_hits, 1))
+                    bins = list(set(interim_result).union(min_hits_range))
                     # bins.append(bins[-1] + 1)
                     # histogram = np.histogram(interim_result, bins=bins, density=True)
                     histogram = np.array([np.count_nonzero(interim_result == x) for x in bins]).astype(float) / len(interim_result)
@@ -277,15 +287,22 @@ if __name__ == "__main__":
             results_tmp.reset_index(inplace=True, drop=True)
             results_tmp.drop(['ship', 'target'], axis=1, inplace=True)
             df = results_tmp.drop('results', axis=1).join(pd.DataFrame(results_tmp.results.values.tolist()))
-            df = df[~np.isnan(df.loc[:, 1])]
+# =============================================================================
+#             try:
+#                 df = df[~np.isnan(df.loc[:, 1])]
+#             except KeyError:
+#                 pass
+# =============================================================================
             df.sort_values(["facing", "range"], axis=0, inplace=True)
-            df.fillna(0.0, inplace=True)
+            numerical_columns = df.columns[2:]
+            df = df.loc[:, list(df.columns[:2]) + sorted(numerical_columns)]
+            # df.fillna(0.0, inplace=True)
             # print(results_df.loc[(results_df.ship == ship) & (results_df.target == tgt)])
             output[f"{ship} vs. {tgt}"] = df
-            print(f"{ship} vs. {tgt}")
+            print(f"{ship} vs. {tgt}", f"{'Locked on' if locked_on else ''}", f"{'with blast marker' if blast else ''}")
             print(df.to_markdown(index=False, floatfmt=".2f"))
     for key, value in output.items():
-        print(key)
+        print(key, f"{'Locked on' if locked_on else ''}", f"{'with blast marker' if blast else ''}")
         print(value.loc[:, ["facing", "range", 3]].to_markdown(index=False, floatfmt=".2f"))
 # =============================================================================
 #     # print("Gothic")
